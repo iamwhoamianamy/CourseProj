@@ -117,6 +117,24 @@ public:
          }
       }
    }
+
+   void read_di_ggl(string file_name)
+   {
+      ifstream fin;
+      fin.open(file_name);
+
+      for(int i = 0; i < N; i++)
+         fin >> di[i];
+
+      for(int i = 0; i < M; i++)
+      {
+         real t;
+         fin >> t;
+         ggl[i] = ggu[i] = t;
+      }
+
+      fin.close();
+   }
 };
 
 // Умножение матрицы на число

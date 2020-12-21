@@ -145,6 +145,7 @@
     <ClInclude Include="BoundValProblem.h" />
     <ClInclude Include="Matrix.h" />
     <ClInclude Include="SLAE.h" />
+    <ClInclude Include="Test.h" />
     <ClInclude Include="Vector.h" />
   </ItemGroup>
   <Import Project="$(VCTargetsPath)\Microsoft.Cpp.targets" />
