@@ -63,6 +63,15 @@ real norm(const vector<real>& vec)
    return sqrt(vec * vec);
 }
 
+//// Функция вычисления суммы модулей всех элементов вектора
+//real vec_sum_abs(vector<real>& vec)
+//{
+//   real res = 0;
+//   for(int i = 0; i < vec.size(); i++)
+//      res += abs(vec[i]);
+//   return res;
+//}
+
 // Ввод вектора vec размерности n из файла с именем file_name
 template<class type>
 void read_vector(string file_name, vector<type>& vec, int n)

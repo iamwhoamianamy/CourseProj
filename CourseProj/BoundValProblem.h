@@ -11,7 +11,12 @@ public:
    Matrix WeightMatrix;         // Локальная матрица масс
    Matrix G1, G2, M;            // Вспомогательные матрицы для вычисления элементов
                                 // локальных матриц и векторов правых частей
-   vector<real> BLoc;           // Локальный вектор правой части
+
+   SLAE slae;                   // Решатель системы
+
+   vector<real> B;              // Глобальный вектор правой части
+   vector<real> LocB;           // Локальный вектор правой части
+   vector<real> Solution;       // Решение
 
    Test test;                   // Информация о значениях функции,
                                 // парматров лямбда и гамма в заданных
@@ -23,20 +28,23 @@ public:
 
    vector<real> Xw;                   // Х координаты границ подобластей
    vector<real> Yw;                   // Y координаты границ подобластей
-   vector<vector<real>> reg_board_i;  // Индексы границ подобластей
+   vector<vector<int>> reg_board_i;   // Индексы границ подобластей
+   vector<vector<int>> bound_cond;    // Информация о граничных условиях
    vector<real> Xc;                   // Координатные линии по X
    vector<real> Yc;                   // Координатные линии по Y
 
    vector<real> Xn;                   // Вектор координат х конечного элемента
    vector<real> Yn;                   // Вектор координат y конечного элемента
 
-   vector<real> lambda;
-   vector<real> gamma;
-   vector<real> F;
+   vector<real> f_in_elem;            // Вектор значений правой части f
+                                      // в узлах конечного элемента
 
    vector<int> global_indices;        // Вектор с номерами узлов в глобальной индексации
+   vector<real> True;                 // Точные значения функции в узлах
 
-   // Инициализация памяти
+   real big_number = 2.4E+10;         // Большое число для учета 1 кравевых условий
+
+   // Конструктор класса
    BoundValProblem()
    {
       G1 = Matrix(9);
@@ -49,11 +57,15 @@ public:
       M.read_di_ggl("M1.txt");
 
       global_indices.resize(9);
+
       Xn.resize(3);
       Yn.resize(3);
+
+      f_in_elem.resize(9);
+      LocB.resize(9);
    }
 
-   // Чтение сетки
+   // Чтение сетки и инициализация памяти
    void form_subregions(string file)
    {
       reg_count = 3;
@@ -133,13 +145,48 @@ public:
       elem_count = (Xc.size() - 1) * (Yc.size() - 1);
       calc_global_indices(elem_count - 1);
       node_count = global_indices[8] + 1;
+      True.resize(node_count);
+      slae = SLAE(node_count, 10000, 1e-14, Global);
+   }
+
+   // Чтение информации о краевых условиях
+   void form_boundaries(string file)
+   {
+      ifstream fin;
+      fin.open(file);
+
+      int n;
+      fin >> n;
+
+      bound_cond.resize(n);
+
+      for(int i = 0; i < n; i++)
+      {
+         bound_cond[i].resize(6);
+
+         for(int j = 0; j < 6; j++)
+            fin >> bound_cond[i][j];
+
+      }
+      fin.close();
    }
 
    // Генерация локальных матриц
    void gen_loc_matrices(real hx, real hy, real lam, real gam)
    {
-      StiffMatrix = (lam / 90 ) * (hy / hx * G1 + hx / hy * G2);
+      StiffMatrix = (lam / 90) * (hy / hx * G1 + hx / hy * G2);
       WeightMatrix = gam * hx * hy / 900 * M;
+   }
+
+   // Генерация локального вектора правой части
+   void gen_loc_b(real hx, real hy, int reg_index)
+   {
+      for(int j = 0; j < 3; j++)
+         for(int i = 0; i < 3; i++)
+            f_in_elem[j * 3 + i] = test.f(Xn[i], Yn[j])[reg_index];
+
+      M.matrix_vector_mult(f_in_elem, LocB, M.ggl, M.ggu);
+      LocB = hx * hy / 900 * LocB;
    }
 
    // Заполняет массив global_indices индексами, соответствующими глобальной номерации
@@ -187,8 +234,10 @@ public:
    }
 
    // Находит индекс подобласти по координатам центрального узла конечного элемента
-   int get_reg_index(real x, real y)
+   int get_reg_index()
    {
+      real x = Xc[1];
+      real y = Yc[1];
       for (int i = 0; i < reg_count; i++)
       {
          real left = Xw[reg_board_i[i][0]];
@@ -235,6 +284,8 @@ public:
    void form_portrait()
    {
       Global.ig.resize(node_count + 1);
+      B.resize(node_count);
+      Solution.resize(node_count);
       Global.jg;
 
       Global.ig[0] = Global.ig[1] = 0;
@@ -293,9 +344,9 @@ public:
          real hx = Xn[2] - Xn[0];
          real hy = Yn[2] - Yn[0];
 
-         int n_region = get_reg_index(Xn[1], Yn[1]);
+         int reg_index = get_reg_index();
 
-         gen_loc_matrices(hx, hy, test.lambda()[n_region], test.gamma()[n_region]);
+         gen_loc_matrices(hx, hy, test.lambda()[reg_index], test.gamma()[reg_index]);
 
          for(int i = 1; i < 9; i++)
          {
@@ -311,11 +362,70 @@ public:
 
                add_to_mat(global_indices[i], global_indices[j], val_l, val_u);
             }
+
+            for(int j = 0; j < 3; j++)
+               for(int i = 0; i < 3; i++)
+                  True[global_indices[j * 3 + i]] = test.u(Xn[i], Yn[j]);
+         }
+
+         gen_loc_b(hx, hy, reg_index);
+
+         for(int i = 0; i < 9; i++)
+         {
+            Global.di[global_indices[i]] += StiffMatrix.di[i] + WeightMatrix.di[i];
+            B[global_indices[i]] += LocB[i];
          }
 
          int asdasd = 1;
       }
+   }
 
+   // Функция учета первых краевых условий
+   void first_bound()
+   {
+      for(int elem_index = 0; elem_index < elem_count; elem_index++)
+      {
+         calc_node_coords(elem_index);
+         calc_global_indices(elem_index);
 
+         int reg_index = get_reg_index();
+
+         for(int k = 0; k < bound_cond.size(); k++)
+            if(bound_cond[k][0] == 1)
+               for(int j = 0; j < 3; j++)
+                  for(int i = 0; i < 3; i++)
+                     if(Xn[i] >= Xw[bound_cond[k][2]] && Xn[i] <= Xw[bound_cond[k][3]] &&
+                        Yn[j] >= Yw[bound_cond[k][4]] && Yn[j] <= Yw[bound_cond[k][5]])
+                     {
+                        Global.di[global_indices[j * 3 + i]] = big_number;
+                        B[global_indices[j * 3 + i]] = big_number * test.ug(Xn[i], Yn[j])[bound_cond[k][1]];
+                     }
+      }
+   }
+
+   // Функция учета вторых краевых условий
+   void second_bound()
+   {
+
+   }
+
+   // Нахождение решения
+   void solve()
+   {
+      slae.mat = Global;
+      slae.pr = B;
+
+      vector<real> x0(node_count, 0);
+
+      cout << slae.conj_grad_method(x0, Solution) << endl;
+
+      for(int i = 0; i < node_count; i++)
+      {
+         cout << setw(3) << i + 1;
+         cout << setw(12) << Solution[i];
+         cout << setw(12) << True[i];
+         cout << setw(15) << scientific << abs(Solution[i] - True[i]) << fixed << endl;
+
+      }
    }
 };

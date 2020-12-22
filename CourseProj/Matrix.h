@@ -118,6 +118,7 @@ public:
       }
    }
 
+   // Функция считывания диагонали и треугольников из файлов
    void read_di_ggl(string file_name)
    {
       ifstream fin;
@@ -135,6 +136,16 @@ public:
 
       fin.close();
    }
+
+   //// Функция вычисления суммы модулей всех элементов матрицы
+   //real mat_sum_abs()
+   //{
+   //   real res = 0;
+   //   res += vec_sum_abs(ggl);
+   //   res += vec_sum_abs(ggu);
+   //   res += vec_sum_abs(di);
+   //   return res;
+   //}
 };
 
 // Умножение матрицы на число
