@@ -23,12 +23,12 @@ public:
 
    vector<real> ug(real x, real y)
    {
-      return { x * x + y * y - 4, 0, 0 };
+      return { x * x + y * y, x * x + y * y, x * x + y * y };
    }
 
-   real u(real x, real y)
+   vector<real> u(real x, real y)
    {
-      return x * x + y * y - 4;
+      return { x * x + y * y,  x * x + y * y, x * x + y * y };
    }
 };
 

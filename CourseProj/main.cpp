@@ -10,7 +10,7 @@ int main()
    BoundValProblem bvp = BoundValProblem();
    Matrix M = bvp.G1 + bvp.G2;
 
-   bvp.form_subregions("tests/test1/regions.txt");
+   bvp.form_elems("tests/test1/regions.txt");
    bvp.form_boundaries("tests/test1/boundary.txt"); 
 
    bvp.form_portrait();

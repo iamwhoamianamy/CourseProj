@@ -7,12 +7,14 @@ class BoundValProblem
 {
 public:
    Matrix Global;               // Глобальная матрица
+   Matrix Fac_global;           // Неполная факторизация глобальной матрицы
    Matrix StiffMatrix;          // Локальная матрица жесткости
    Matrix WeightMatrix;         // Локальная матрица масс
    Matrix G1, G2, M;            // Вспомогательные матрицы для вычисления элементов
                                 // локальных матриц и векторов правых частей
 
-   SLAE slae;                   // Решатель системы
+   SLAE Slae;                   // Решатель системы без предобуславливания
+   SLAE Fac_slae;               // Решатель системы c предобуславливанием
 
    vector<real> B;              // Глобальный вектор правой части
    vector<real> LocB;           // Локальный вектор правой части
@@ -47,14 +49,7 @@ public:
    // Конструктор класса
    BoundValProblem()
    {
-      G1 = Matrix(9);
-      G1.read_di_ggl("G1.txt");
-
-      G2 = Matrix(9);
-      G2.read_di_ggl("G2.txt");
-
-      M = Matrix(9);
-      M.read_di_ggl("M1.txt");
+      reg_count = 3;
 
       global_indices.resize(9);
 
@@ -66,29 +61,41 @@ public:
    }
 
    // Чтение сетки и инициализация памяти
-   void form_subregions(string file)
+   void form_elems(string file)
    {
-      reg_count = 3;
+      // Чтение вспомогательных матриц для построения матриц жесткости и массы
+      G1 = Matrix(9);
+      G1.read_di_ggl("G1.txt");
 
+      G2 = Matrix(9);
+      G2.read_di_ggl("G2.txt");
+
+      M = Matrix(9);
+      M.read_di_ggl("M1.txt");
+
+      // Чтение информации об областях
       ifstream fin;
       fin.open(file);
 
-      int x_count;
+      int x_count;                       // Количество границ по оси X
       fin >> x_count;
       Xw.resize(x_count);
 
+      // Чтение границ по оси X
       for (int i = 0; i < reg_count; i++)
          fin >> Xw[i];
 
-      int y_count;
+      int y_count;                       // Количество границ по оси Y
       fin >> y_count;
       Yw.resize(y_count);
 
+      // Чтение границ по оси Y
       for (int i = 0; i < y_count; i++)
          fin >> Yw[i];
 
       reg_board_i.resize(reg_count);
 
+      // Считывание индексов границ подобластей
       for (int i = 0; i < reg_count; i++)
       {
          reg_board_i[i].resize(4);
@@ -99,6 +106,7 @@ public:
       vector<real> t(reg_count - 1);
       int n_div = 1;
 
+      // Считывание и формирование координатных осей по X
       for (int i = 0; i < reg_count - 1; i++)
       {
          fin >> t[i];
@@ -122,6 +130,7 @@ public:
 
       n_div = 1;
 
+      // Считывание и формирование координатных осей по Y
       for (int i = 0; i < reg_count - 1; i++)
       {
          fin >> t[i];
@@ -142,11 +151,23 @@ public:
       }
       Yc[k] = Yw[y_count - 1];
 
+      // Считаем количество конечных элементов
       elem_count = (Xc.size() - 1) * (Yc.size() - 1);
+
+      // Считаем количество узлов в глобальной нумерации
       calc_global_indices(elem_count - 1);
       node_count = global_indices[8] + 1;
+
+      
       True.resize(node_count);
-      slae = SLAE(node_count, 10000, 1e-14, Global);
+      Slae = SLAE(node_count, 10000, 1e-14);
+      Fac_slae = SLAE(node_count, 10000, 1e-14);
+
+      Global.ig.resize(node_count + 1);
+      B.resize(node_count);
+      Solution.resize(node_count);
+
+      Fac_global = Matrix(node_count, 0);
    }
 
    // Чтение информации о краевых условиях
@@ -236,8 +257,8 @@ public:
    // Находит индекс подобласти по координатам центрального узла конечного элемента
    int get_reg_index()
    {
-      real x = Xc[1];
-      real y = Yc[1];
+      real x = Xn[1];
+      real y = Yn[1];
       for (int i = 0; i < reg_count; i++)
       {
          real left = Xw[reg_board_i[i][0]];
@@ -252,7 +273,7 @@ public:
    }
 
    // Вспомогательная функция для формирования портрета
-   void incert_to_mat(int r, int c)
+   void incert_to_row(int r, int c)
    {
       int i_in_jg = Global.ig[r];
       int prof_len = Global.ig[r + 1] - Global.ig[r];
@@ -283,11 +304,6 @@ public:
    // Формируем портрет глобалной матрицы
    void form_portrait()
    {
-      Global.ig.resize(node_count + 1);
-      B.resize(node_count);
-      Solution.resize(node_count);
-      Global.jg;
-
       Global.ig[0] = Global.ig[1] = 0;
 
       for(int i = 0; i < elem_count; i++)
@@ -305,7 +321,7 @@ public:
 
          for(int i = 1; i < 9; i++)
             for(int j = 0; j < i; j++)
-               incert_to_mat(help[i][j][0], help[i][j][1]);
+               incert_to_row(help[i][j][0], help[i][j][1]);
       }
 
       Global.N = Global.ig.size() - 1;
@@ -365,7 +381,7 @@ public:
 
             for(int j = 0; j < 3; j++)
                for(int i = 0; i < 3; i++)
-                  True[global_indices[j * 3 + i]] = test.u(Xn[i], Yn[j]);
+                  True[global_indices[j * 3 + i]] = test.u(Xn[i], Yn[j])[reg_index];
          }
 
          gen_loc_b(hx, hy, reg_index);
@@ -403,29 +419,42 @@ public:
       }
    }
 
-   // Функция учета вторых краевых условий
-   void second_bound()
-   {
-
-   }
-
    // Нахождение решения
    void solve()
    {
-      slae.mat = Global;
-      slae.pr = B;
+      Slae.pr = B;
+      Global.diag_fact(Fac_global);
 
       vector<real> x0(node_count, 0);
+      cout << Slae.conj_grad_pred_method(x0, Solution, Global, Fac_slae, Fac_global) << endl;
 
-      cout << slae.conj_grad_method(x0, Solution) << endl;
-
+      // Вывод результатов в консоль
       for(int i = 0; i < node_count; i++)
       {
          cout << setw(3) << i + 1;
          cout << setw(12) << Solution[i];
          cout << setw(12) << True[i];
          cout << setw(15) << scientific << abs(Solution[i] - True[i]) << fixed << endl;
-
       }
+
+      print_results("tests/test1/results.txt");
+   }
+
+   // Вывод результатов в файл
+   void print_results(string file_name)
+   {
+      ofstream fout;
+      fout.open(file_name);
+
+
+      for(int i = 0; i < node_count; i++)
+      {
+         fout << i + 1;
+         fout << "\t" << Solution[i];
+         fout << "\t" << True[i];
+         fout << "\t" << scientific << abs(Solution[i] - True[i]) << fixed << endl;
+      }
+
+      fout.close();
    }
 };
