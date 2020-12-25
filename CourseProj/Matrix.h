@@ -16,21 +16,6 @@ public:
 
    vector<real> di;     // Диагональ
 
-   Matrix(string path)
-   {
-      ifstream fin;
-      fin.open(path + "kuslau.txt");
-      fin >> N;
-      fin.close();
-
-      read_vector<int>(path + "ig.txt", ig, N + 1);
-      M = ig[N];
-      read_vector<int>(path + "jg.txt", jg, M);
-      read_vector<real>(path + "ggl.txt", ggl, M);
-      read_vector<real>(path + "ggu.txt", ggu, M);
-      read_vector<real>(path + "di.txt", di, N);
-   }
-
    Matrix(int _N, int _M)
    {
       N = _N;
@@ -136,16 +121,6 @@ public:
 
       fin.close();
    }
-
-   //// Функция вычисления суммы модулей всех элементов матрицы
-   //real mat_sum_abs()
-   //{
-   //   real res = 0;
-   //   res += vec_sum_abs(ggl);
-   //   res += vec_sum_abs(ggu);
-   //   res += vec_sum_abs(di);
-   //   return res;
-   //}
 };
 
 // Умножение матрицы на число

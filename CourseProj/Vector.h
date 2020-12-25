@@ -71,32 +71,3 @@ real norm(const vector<real>& vec)
 //      res += abs(vec[i]);
 //   return res;
 //}
-
-// Ввод вектора vec размерности n из файла с именем file_name
-template<class type>
-void read_vector(string file_name, vector<type>& vec, int n)
-{
-   vec.resize(n);
-   ifstream fin;
-   fin.open(file_name);
-   for (int i = 0; i < n; i++)
-      fin >> vec[i];
-
-   fin.close();
-}
-
-// Вывод вектора vec в файл с именем file_name
-template<class type>
-void print_vector(string file_name, vector<type>& vec)
-{
-   ofstream fout;
-   fout.open(file_name);
-
-   int n = vec.size();
-   fout << setprecision(16);
-
-   for (int i = 0; i < n; i++)
-      fout << vec[i] << " ";
-
-   fout.close();
-}

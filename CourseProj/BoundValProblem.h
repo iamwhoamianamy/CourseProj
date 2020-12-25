@@ -24,14 +24,18 @@ public:
                                 // парматров лямбда и гамма в заданных
                                 // областях
 
-   int reg_count;                     // Количество подобластей
+   int reg_count;                     // Количество областей
    int elem_count;                    // Количество конечных элементов
    int node_count;                    // Количество узлов
 
+   vector<vector<real>> Node_coords;          // Координаты узлов
+
    vector<real> Xw;                   // Х координаты границ подобластей
    vector<real> Yw;                   // Y координаты границ подобластей
+
    vector<vector<int>> reg_board_i;   // Индексы границ подобластей
    vector<vector<int>> bound_cond;    // Информация о граничных условиях
+
    vector<real> Xc;                   // Координатные линии по X
    vector<real> Yc;                   // Координатные линии по Y
 
@@ -82,7 +86,7 @@ public:
       Xw.resize(x_count);
 
       // Чтение границ по оси X
-      for (int i = 0; i < reg_count; i++)
+      for (int i = 0; i < x_count; i++)
          fin >> Xw[i];
 
       int y_count;                       // Количество границ по оси Y
@@ -103,11 +107,11 @@ public:
             fin >> reg_board_i[i][j];
       }
 
-      vector<real> t(reg_count - 1);
+      vector<real> t(x_count - 1);
       int n_div = 1;
 
       // Считывание и формирование координатных осей по X
-      for (int i = 0; i < reg_count - 1; i++)
+      for (int i = 0; i < x_count - 1; i++)
       {
          fin >> t[i];
          n_div += t[i];
@@ -118,7 +122,7 @@ public:
       Xc.resize(n_div);
 
       int k = 0;
-      for (int i = 0; i < reg_count - 1; i++)
+      for (int i = 0; i < x_count - 1; i++)
       {
          Xc[k] = Xw[i];
          k++;
@@ -131,7 +135,7 @@ public:
       n_div = 1;
 
       // Считывание и формирование координатных осей по Y
-      for (int i = 0; i < reg_count - 1; i++)
+      for (int i = 0; i < y_count - 1; i++)
       {
          fin >> t[i];
          n_div += t[i];
@@ -140,7 +144,7 @@ public:
       Yc.resize(n_div);
 
       k = 0;
-      for (int i = 0; i < reg_count - 1; i++)
+      for (int i = 0; i < y_count - 1; i++)
       {
          Yc[k] = Yw[i];
          k++;
@@ -160,12 +164,16 @@ public:
 
       
       True.resize(node_count);
-      Slae = SLAE(node_count, 10000, 1e-14);
-      Fac_slae = SLAE(node_count, 10000, 1e-14);
+      Slae = SLAE(node_count, 10000, 1e-20);
+      Fac_slae = SLAE(node_count, 10000, 1e-20);
 
       Global.ig.resize(node_count + 1);
       B.resize(node_count);
       Solution.resize(node_count);
+      Node_coords.resize(node_count);
+
+      for(int i = 0; i < node_count; i++)
+         Node_coords[i].resize(2);
 
       Fac_global = Matrix(node_count, 0);
    }
@@ -195,8 +203,8 @@ public:
    // Генерация локальных матриц
    void gen_loc_matrices(real hx, real hy, real lam, real gam)
    {
-      StiffMatrix = (lam / 90) * (hy / hx * G1 + hx / hy * G2);
-      WeightMatrix = gam * hx * hy / 900 * M;
+      StiffMatrix = (lam / 90.0) * (hy / hx * G1 + hx / hy * G2);
+      WeightMatrix = (gam * hx * hy / 900.0 ) * M;
    }
 
    // Генерация локального вектора правой части
@@ -352,10 +360,10 @@ public:
    // Сборка глобальной матрицы 
    void build_global_mat()
    {
-      for(int n_elem = 0; n_elem < elem_count; n_elem++)
+      for(int elem_index = 0; elem_index < elem_count; elem_index++)
       {
-         calc_global_indices(n_elem);
-         calc_node_coords(n_elem);
+         calc_global_indices(elem_index);
+         calc_node_coords(elem_index);
 
          real hx = Xn[2] - Xn[0];
          real hy = Yn[2] - Yn[0];
@@ -367,9 +375,9 @@ public:
          for(int i = 1; i < 9; i++)
          {
             int beg_prof = StiffMatrix.ig[i];
-            int len_prof = StiffMatrix.ig[i + 1] - StiffMatrix.ig[i];
+            int end_prof = StiffMatrix.ig[i + 1];
 
-            for(int i_in_prof = beg_prof; i_in_prof < beg_prof + len_prof; i_in_prof++)
+            for(int i_in_prof = beg_prof; i_in_prof < end_prof; i_in_prof++)
             {
                int j = StiffMatrix.jg[i_in_prof];
 
@@ -378,11 +386,15 @@ public:
 
                add_to_mat(global_indices[i], global_indices[j], val_l, val_u);
             }
-
-            for(int j = 0; j < 3; j++)
-               for(int i = 0; i < 3; i++)
-                  True[global_indices[j * 3 + i]] = test.u(Xn[i], Yn[j])[reg_index];
          }
+
+         for(int j = 0; j < 3; j++)
+            for(int i = 0; i < 3; i++)
+            {
+               True[global_indices[j * 3 + i]] = test.u(Xn[i], Yn[j])[reg_index];
+               Node_coords[global_indices[j * 3 + i]][0] = Xn[i];
+               Node_coords[global_indices[j * 3 + i]][1] = Yn[j];
+            }
 
          gen_loc_b(hx, hy, reg_index);
 
@@ -391,33 +403,51 @@ public:
             Global.di[global_indices[i]] += StiffMatrix.di[i] + WeightMatrix.di[i];
             B[global_indices[i]] += LocB[i];
          }
-
-         int asdasd = 1;
       }
    }
 
    // Функция учета первых краевых условий
    void first_bound()
    {
-      for(int elem_index = 0; elem_index < elem_count; elem_index++)
+      for(int i = 0; i < node_count; i++)
       {
-         calc_node_coords(elem_index);
-         calc_global_indices(elem_index);
-
-         int reg_index = get_reg_index();
-
+         real x = Node_coords[i][0];
+         real y = Node_coords[i][1];
          for(int k = 0; k < bound_cond.size(); k++)
             if(bound_cond[k][0] == 1)
-               for(int j = 0; j < 3; j++)
-                  for(int i = 0; i < 3; i++)
-                     if(Xn[i] >= Xw[bound_cond[k][2]] && Xn[i] <= Xw[bound_cond[k][3]] &&
-                        Yn[j] >= Yw[bound_cond[k][4]] && Yn[j] <= Yw[bound_cond[k][5]])
-                     {
-                        Global.di[global_indices[j * 3 + i]] = big_number;
-                        B[global_indices[j * 3 + i]] = big_number * test.ug(Xn[i], Yn[j])[bound_cond[k][1]];
-                     }
+               if(x >= Xw[bound_cond[k][2]] && x <= Xw[bound_cond[k][3]] &&
+                  y >= Yw[bound_cond[k][4]] && y <= Yw[bound_cond[k][5]])
+               {
+                  /*Global.di[i] = 1;
+                  B[i] = test.ug(x, y)[bound_cond[k][1]];
+                  null_row(i);*/
+
+                  Global.di[i] = big_number;
+                  B[i] = big_number * test.ug(x, y)[bound_cond[k][1]];
+               }
       }
    }
+
+   //void null_row(int r)
+   //{
+   //   int prof_beg = Global.ig[r];
+   //   int prof_end = Global.ig[r + 1];
+
+   //   for(int i_in_prof = prof_beg; i_in_prof < prof_end; i_in_prof++)
+   //      Global.ggl[i_in_prof] = Global.ggu[i_in_prof] = 0;
+
+   //   for(int i = r; i < Global.N; i++)
+   //   {
+   //      prof_beg = Global.ig[i];
+   //      prof_end = Global.ig[i + 1];
+
+   //      for(int i_in_prof = prof_beg; i_in_prof < prof_end; i_in_prof++)
+   //      {
+   //         if(Global.jg[i_in_prof] == r)
+   //            Global.ggl[i_in_prof] = Global.ggu[i_in_prof] = 0;
+   //      }
+   //   }
+   //}
 
    // Нахождение решения
    void solve()
@@ -425,19 +455,19 @@ public:
       Slae.pr = B;
       Global.diag_fact(Fac_global);
 
-      vector<real> x0(node_count, 0);
+      vector<real> x0(node_count);
       cout << Slae.conj_grad_pred_method(x0, Solution, Global, Fac_slae, Fac_global) << endl;
 
       // Вывод результатов в консоль
       for(int i = 0; i < node_count; i++)
       {
          cout << setw(3) << i + 1;
+         cout << setw(12) << Node_coords[i][0];
+         cout << setw(12) << Node_coords[i][1];
          cout << setw(12) << Solution[i];
          cout << setw(12) << True[i];
          cout << setw(15) << scientific << abs(Solution[i] - True[i]) << fixed << endl;
       }
-
-      print_results("tests/test1/results.txt");
    }
 
    // Вывод результатов в файл
@@ -445,16 +475,19 @@ public:
    {
       ofstream fout;
       fout.open(file_name);
+      fout << norm(Solution - True) / norm(True) << endl;
 
+      fout << "n          x            y               calc              true             dif" << endl;
 
       for(int i = 0; i < node_count; i++)
       {
-         fout << i + 1;
+         fout << fixed << i + 1;
+         fout << "\t" << Node_coords[i][0];
+         fout << "\t" << Node_coords[i][1];
          fout << "\t" << Solution[i];
          fout << "\t" << True[i];
-         fout << "\t" << scientific << abs(Solution[i] - True[i]) << fixed << endl;
+         fout << "\t" << scientific << abs(Solution[i] - True[i]) << endl;
       }
-
       fout.close();
    }
 };
